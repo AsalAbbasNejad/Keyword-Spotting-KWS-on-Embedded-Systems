@@ -1,81 +1,44 @@
-/*
- * Keyword Spotting (KWS) - Assignment #2
- * Optimized Inference Code using CMSIS-DSP
- */
+# 🎙️ Keyword Spotting (KWS) on Arduino Nano 33 BLE Sense
+> **TinyML Audio Classification: Clap, Snap, and Tap Detection**
 
-#include <PDM.h>
-#include <TensorFlowLite.h>
-#include <tensorflow/lite/micro/all_ops_resolver.h>
-#include <tensorflow/lite/micro/micro_interpreter.h>
-#include <tensorflow/lite/schema/schema_generated.h>
-#include "model.h"
+## 📖 Overview
+This repository contains the implementation of a **Keyword Spotting (KWS)** system designed for low-power embedded devices. The goal is to detect and classify three specific sound events (**Clap**, **Snap**, and **Tap**) in real-time directly on the microcontroller using **TensorFlow Lite Micro**.
 
-// Buffer settings
-short sampleBuffer[256];
-volatile int samplesRead;
+## 🏗️ Technical Architecture
+The project implements a full digital signal processing (DSP) pipeline to transform raw audio into classification results:
 
-// TFLite Variables
-tflite::AllOpsResolver tflOpsResolver;
-const tflite::Model* tflModel = nullptr;
-tflite::MicroInterpreter* tflInterpreter = nullptr;
-TfLiteTensor* tflInputTensor = nullptr;
+### 1. Data Acquisition
+* **Sensor**: MP34DT06JTR digital microphone.
+* **Sampling**: Pulse-Density Modulation (PDM) sampled at **16 kHz**.
+* **Format**: Converted to 16-bit Pulse Code Modulation (PCM) samples.
 
-// Allocate memory (8 KB as specified in the docs) 
-constexpr int tensorArenaSize = 8 * 1024;
-byte tensorArena[tensorArenaSize] __attribute__((aligned(16)));
+### 2. Feature Engineering (MFCC Pipeline)
+To reduce dimensionality and focus on relevant features, we convert 1-second audio windows into Mel-Frequency Cepstral Coefficients (MFCCs):
+* **Pre-emphasis**: High-pass filtering to balance the spectrum.
+* **Hamming Window**: Smoothing frame edges to prevent spectral leakage.
+* **FFT & Power Spectrum**: Converting time-domain signals to frequency domain.
+* **Mel Filterbank**: Scaling frequencies according to human auditory perception.
+* **Log-Energy & DCT-II**: Compressing dynamic range and decorrelating features.
 
-const char* KEYWORDS[] = {"Clap", "Snap", "Tap"};
-#define NUM_KEYWORDS (sizeof(KEYWORDS) / sizeof(KEYWORDS[0]))
+### 3. Deep Learning Model
+* **Type**: Convolutional Neural Network (CNN).
+* **Framework**: TensorFlow Lite for Microcontrollers.
+* **Optimization**: Uses **CMSIS-DSP** to leverage the ARM Cortex-M4 hardware FPU and SIMD instructions for faster processing.
 
-void setup() {
-  Serial.begin(9600);
-  while (!Serial);
+## 🛠️ Hardware Requirements
+* **Microcontroller**: Arduino Nano 33 BLE Sense Rev2.
+* **Processor**: Nordic nRF52840 (ARM Cortex-M4 @ 64MHz).
+* **Memory**: 256 KB RAM / 1 MB Flash.
 
-  // Initialize PDM at 16 kHz [cite: 181, 231]
-  if (!PDM.begin(1, 16000)) {
-    Serial.println("Failed to start PDM!");
-    while (1);
-  }
-  PDM.onReceive(onPDMdata);
+## 🚀 Getting Started
+1. **Data Collection**: Collect 1-second audio samples for each class.
+2. **Training**: Use the provided Python notebook to extract features and train the CNN.
+3. **Deployment**: Export the model as a C header file (model.h) and upload the Arduino sketch.
 
-  tflModel = tflite::GetModel(model);
-  // Manual version check to avoid schema mismatch error [cite: 82]
-  if (tflModel->version() != 3) {
-    Serial.println("Model version mismatch!");
-  }
-
-  // Optimized Interpreter setup [cite: 89]
-  static tflite::MicroInterpreter static_interpreter(
-      tflModel, tflOpsResolver, tensorArena, tensorArenaSize, nullptr, nullptr);
-  tflInterpreter = &static_interpreter;
-
-  tflInterpreter->AllocateTensors();
-  tflInputTensor = tflInterpreter->input(0);
-}
-
-void loop() {
-  if (samplesRead > 0) {
-    // Fill Input Tensor: Normalize PCM to float range [-1, 1] [cite: 186]
-    // The manual loops are replaced by direct pointer access for speed
-    for (int i = 0; i < samplesRead; i++) {
-      tflInputTensor->data.f[i] = sampleBuffer[i] / 32768.0f;
-    }
-
-    // Run Inference
-    if (tflInterpreter->Invoke() == kTfLiteOk) {
-      TfLiteTensor* output = tflInterpreter->output(0);
-      for (int i = 0; i < NUM_KEYWORDS; i++) {
-        Serial.print(KEYWORDS[i]);
-        Serial.print(": ");
-        Serial.println(output->data.f[i], 4);
-      }
-    }
-    samplesRead = 0;
-  }
-}
-
-void onPDMdata() {
-  int bytesAvailable = PDM.available();
-  int bytesRead = PDM.read(sampleBuffer, bytesAvailable);
-  samplesRead = bytesRead / 2; // Convert bytes to 16-bit samples [cite: 242]
-}
+## 📂 Project Structure
+```text
+├── data/               # 1-second samples (Clap, Snap, Tap)
+├── src/                # Arduino sketch (.ino)
+├── model/              # TFLite model and model.h
+├── notebook/           # Training and Feature Extraction (Colab)
+└── README.md           # Documentation
