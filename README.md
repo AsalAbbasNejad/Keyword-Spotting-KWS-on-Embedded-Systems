@@ -1,102 +1,44 @@
-# Keyword-Spotting-KWS-on-Embedded-Systems
-/*
- * Keyword Spotting (KWS) - Final Assignment #2
- * Targets: Clap, Snap, and Tap sounds.
- * Hardware: Arduino Nano 33 BLE Sense.
- */
+# 🎙️ Keyword Spotting (KWS) on Arduino Nano 33 BLE Sense
+> **TinyML Audio Classification: Clap, Snap, and Tap Detection**
 
-#include <PDM.h>
-#include <TensorFlowLite.h>
-#include <tensorflow/lite/micro/all_ops_resolver.h>
-#include <tensorflow/lite/micro/micro_interpreter.h>
-#include <tensorflow/lite/schema/schema_generated.h>
-#include "model.h" // Your exported model from Colab
+## 📖 Overview
+[cite_start]This repository contains the implementation of a **Keyword Spotting (KWS)** system designed for low-power embedded devices[cite: 1, 2]. [cite_start]The goal is to detect and classify three specific sound events (**Clap**, **Snap**, and **Tap**) in real-time directly on the microcontroller using **TensorFlow Lite Micro**[cite: 11, 2221, 2222, 2223].
 
-// Buffer to read samples into, each sample is 16-bits (PCM)
-short sampleBuffer[256]; [cite: 221]
-volatile int samplesRead; [cite: 223]
+## 🏗️ Technical Architecture
+[cite_start]The project implements a full digital signal processing (DSP) pipeline to transform raw audio into classification results[cite: 712, 713]:
 
-// TFLite Global Variables
-tflite::AllOpsResolver tflOpsResolver;
-const tflite::Model* tflModel = nullptr;
-tflite::MicroInterpreter* tflInterpreter = nullptr;
-TfLiteTensor* tflInputTensor = nullptr;
-TfLiteTensor* tflOutputTensor = nullptr;
+### 1. Data Acquisition
+* [cite_start]**Sensor**: MP34DT06JTR digital microphone[cite: 134, 152].
+* [cite_start]**Sampling**: Pulse-Density Modulation (PDM) sampled at **16 kHz**[cite: 138, 158].
+* [cite_start]**Format**: Converted to 16-bit Pulse Code Modulation (PCM) samples[cite: 158, 185].
 
-// Allocate memory for TFLite Micro (Arena Size)
-constexpr int tensorArenaSize = 64 * 1024; // Adjust based on your model size
-byte tensorArena[tensorArenaSize] __attribute__((aligned(16)));
+### 2. Feature Engineering (MFCC Pipeline)
+[cite_start]To reduce dimensionality and focus on relevant features, we convert 1-second audio windows into Mel-Frequency Cepstral Coefficients (MFCCs)[cite: 717, 1675]:
+* [cite_start]**Pre-emphasis**: High-pass filtering to balance the spectrum[cite: 916, 919].
+* [cite_start]**Hamming Window**: Smoothing frame edges to prevent spectral leakage[cite: 956, 960].
+* [cite_start]**FFT & Power Spectrum**: Converting time-domain signals to frequency domain[cite: 995, 1066].
+* [cite_start]**Mel Filterbank**: Scaling frequencies according to human auditory perception[cite: 1163, 1165, 1232].
+* [cite_start]**Log-Energy & DCT-II**: Compressing dynamic range and decorrelating features[cite: 1362, 1457, 1459].
 
-// Labels for your classes [cite: 2221, 2222, 2223]
-const char* KEYWORDS[] = {
-  "Clap",
-  "Snap",
-  "Tap"
-};
-#define NUM_KEYWORDS (sizeof(KEYWORDS) / sizeof(KEYWORDS[0]))
+### 3. Deep Learning Model
+* [cite_start]**Type**: Convolutional Neural Network (CNN)[cite: 1755, 1893].
+* [cite_start]**Framework**: TensorFlow Lite for Microcontrollers[cite: 11].
+* [cite_start]**Optimization**: Uses **CMSIS-DSP** to leverage the ARM Cortex-M4 hardware FPU and SIMD instructions for 4x faster processing[cite: 727, 737, 742, 1001].
 
-void setup() {
-  Serial.begin(9600);
-  while (!Serial);
+## 🛠️ Hardware Requirements
+* [cite_start]**Microcontroller**: Arduino Nano 33 BLE Sense Rev2[cite: 82].
+* [cite_start]**Processor**: Nordic nRF52840 (ARM Cortex-M4 @ 64MHz)[cite: 83, 90].
+* [cite_start]**Memory**: 256 KB RAM / 1 MB Flash[cite: 101, 102].
 
-  // 1. Initialize Microphone (PDM) at 16 kHz mono [cite: 230, 231]
-  PDM.onReceive(onPDMdata); [cite: 225]
-  if (!PDM.begin(1, 16000)) { [cite: 231]
-    Serial.println("Failed to start PDM!");
-    while (1);
-  }
+## 🚀 Getting Started
+1. [cite_start]**Data Collection**: Collect 1-second audio samples for each class[cite: 2215].
+2. [cite_start]**Training**: Use the provided Python notebook to extract features and train the CNN[cite: 2213].
+3. [cite_start]**Deployment**: Export the model as a C header file (`model.h`) and upload the Arduino sketch[cite: 2216, 2217].
 
-  // 2. Load TFLite Model [cite: 1881]
-  tflModel = tflite::GetModel(model);
-  if (tflModel->version() != 3) {
-    Serial.println("Model schema mismatch!");
-    while (1);
-  }
-
-  // 3. Setup Interpreter (Using nullptr for compatibility with KAIST/Harvard libraries)
-  static tflite::MicroInterpreter static_interpreter(
-      tflModel, tflOpsResolver, tensorArena, tensorArenaSize, nullptr, nullptr);
-  tflInterpreter = &static_interpreter;
-
-  // 4. Allocate memory for model's tensors
-  tflInterpreter->AllocateTensors();
-  tflInputTensor = tflInterpreter->input(0);
-  tflOutputTensor = tflInterpreter->output(0);
-}
-
-void loop() {
-  // Wait for microphone data
-  if (samplesRead) {
-    // In a full KWS pipeline, you would perform MFCC extraction here [cite: 712, 713]
-    // For this GitHub version, we assume the input is ready after 1 second of audio [cite: 2215]
-    
-    // Fill Input Tensor (Simplified)
-    for (int i = 0; i < tflInputTensor->bytes / sizeof(float); i++) {
-        tflInputTensor->data.f[i] = (float)sampleBuffer[i] / 32768.0; // Normalizing PCM [cite: 186]
-    }
-
-    // 5. Run Inference [cite: 2107]
-    TfLiteStatus invokeStatus = tflInterpreter->Invoke();
-    if (invokeStatus != kTfLiteOk) {
-      Serial.println("Inference failed!");
-      return;
-    }
-
-    // 6. Print Results [cite: 2108]
-    Serial.println("--- Prediction Results ---");
-    for (int i = 0; i < NUM_KEYWORDS; i++) {
-      Serial.print(KEYWORDS[i]);
-      Serial.print(": ");
-      Serial.println(tflOutputTensor->data.f[i], 4); // Probability score
-    }
-    
-    samplesRead = 0; // Reset for next sound window
-  }
-}
-
-// Callback function to read data from PDM microphone [cite: 236]
-void onPDMdata() {
-  int bytesAvailable = PDM.available(); [cite: 238]
-  int bytesRead = PDM.read(sampleBuffer, bytesAvailable); [cite: 240]
-  samplesRead = bytesRead / 2; // 16-bit PCM (2 bytes per sample) [cite: 241, 242]
-}
+## 📂 Project Structure
+```text
+├── data/               # 1-second samples (Clap, Snap, Tap)
+├── src/                # Arduino sketch (.ino)
+├── model/              # TFLite model and model.h
+├── notebook/           # Training and Feature Extraction (Colab)
+└── README.md           # Documentation
