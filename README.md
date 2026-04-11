@@ -1,5 +1,6 @@
 # 🎙️ Keyword Spotting (KWS) on Arduino Nano 33 BLE Sense
 > **TinyML Audio Classification: Clap, Snap, and Tap Detection**
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/492805f8-6ee6-43be-8ea0-a7f41c6aa45e" />
 
 ## 📖 Overview
 This repository contains the implementation of a **Keyword Spotting (KWS)** system designed for low-power embedded devices. The goal is to detect and classify three specific sound events (**Clap**, **Snap**, and **Tap**) in real-time directly on the microcontroller using **TensorFlow Lite Micro**.
