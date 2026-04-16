@@ -48,7 +48,7 @@ void loop() {
    
     if (tflInterpreter->Invoke() == kTfLiteOk) {
       TfLiteTensor* output = tflInterpreter->output(0);
-      // چاپ نتیجه برای اولین کلاس (مثلاً Clap)
+      
       Serial.print("Score: ");
       Serial.println(output->data.f[0], 4); 
     }
