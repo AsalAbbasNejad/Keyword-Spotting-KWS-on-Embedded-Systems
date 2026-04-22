@@ -1,0 +1,92 @@
+#include <Arduino.h>
+#include <PDM.h>
+#include <TensorFlowLite.h>
+#include "tensorflow/lite/micro/all_ops_resolver.h"
+#include "tensorflow/lite/micro/micro_error_reporter.h"
+#include "tensorflow/lite/micro/micro_interpreter.h"
+#include "tensorflow/lite/schema/schema_generated.h"
+#include "tensorflow/lite/version.h"
+#include "model.h"
+
+#define MODEL_INPUT_SIZE 16000 
+static int16_t audio_buffer_int[MODEL_INPUT_SIZE];
+int audio_index = 0;
+
+short sampleBuffer[256];
+volatile int samplesRead = 0;
+
+constexpr int tensor_arena_size = 30 * 1024; 
+uint8_t tensor_arena[tensor_arena_size];
+
+tflite::MicroInterpreter* interpreter = nullptr;
+const char* labels[] = {"Clap", "Snap", "Tap", "Background"};
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);
+  delay(1000);
+
+  Serial.println("--- KWS AI START ---");
+
+  static tflite::MicroErrorReporter micro_error_reporter;
+  const tflite::Model* model = tflite::GetModel(model_data);
+  static tflite::AllOpsResolver resolver;
+
+  static tflite::MicroInterpreter static_interpreter(
+      model, resolver, tensor_arena, tensor_arena_size, &micro_error_reporter);
+  interpreter = &static_interpreter;
+  interpreter->AllocateTensors();
+
+  if (!PDM.begin(1, 16000)) { Serial.println("Mic Error"); while (1); }
+  PDM.onReceive(onPDMdata);
+  PDM.setGain(80); 
+
+  Serial.println("=== LISTENING ACTIVE ===");
+}
+
+void loop() {
+  if (samplesRead > 0) {
+    int readCount = samplesRead;
+    samplesRead = 0; 
+
+    for (int i = 0; i < readCount; i++) {
+      if (audio_index < MODEL_INPUT_SIZE) {
+        audio_buffer_int[audio_index++] = sampleBuffer[i];
+      }
+
+      if (audio_index >= MODEL_INPUT_SIZE) {
+        float* input_values = interpreter->input(0)->data.f;
+        for (int j = 0; j < MODEL_INPUT_SIZE; j++) {
+          input_values[j] = audio_buffer_int[j] / 32768.0f;
+        }
+
+        if (interpreter->Invoke() == kTfLiteOk) {
+          TfLiteTensor* output = interpreter->output(0);
+          float max_val = 0; int max_idx = -1;
+          for (int k = 0; k < 4; k++) {
+            if (output->data.f[k] > max_val) {
+              max_val = output->data.f[k];
+              max_idx = k;
+            }
+          }
+          Serial.print("Prediction: "); Serial.print(labels[max_idx]);
+          Serial.print(" | Score: "); Serial.println(max_val, 2);
+        }
+        audio_index = 0; 
+      }
+    }
+  }
+
+  static unsigned long last_debug = 0;
+  if (millis() - last_debug > 2000) {
+    Serial.print("Collecting audio... Buffer at: ");
+    Serial.println(audio_index);
+    last_debug = millis();
+  }
+}
+
+void onPDMdata() {
+  int bytesAvailable = PDM.available();
+  PDM.read(sampleBuffer, bytesAvailable);
+  samplesRead = bytesAvailable / 2;
+}
